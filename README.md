@@ -7,4 +7,3 @@ This repository contains the configuration files and setup instructions for sett
 ```sh
 pre-commit install
 ```
-
