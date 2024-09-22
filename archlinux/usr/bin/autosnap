@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+
+# autosnap.sh
+#
+# A simple script to automatically create and manage Btrfs snapshots on Arch Linux.
+# Please adjust the TIMEZONE, MOUNT_DEVICE, MOUNT_POINT, SNAPSHOT_DIR, and SUBVOLUME_NAME variables to match your system.
+
+# Set constants
+readonly TIMEZONE="Europe/Paris"
+MOUNT_DEVICE=$(df / | awk 'END{print $1}')
+readonly MOUNT_DEVICE
+readonly MOUNT_POINT="/.snapshots/"
+readonly SNAPSHOT_DIR="/.snapshots/autosnap"
+readonly SUBVOLUME_NAME="@snapshots"
+
+readonly BOOT_FILE="/boot/loader/entries/arch.conf"
+
+# Get currently mounted subvolume
+CURRENT_SUBVOLUME=CURRENT_SUBVOLUME=${SNAPSHOT_DIR}$(mount | grep " / " | sed -n -e 's/.*subvol=\/\?\([^,)]*\).*/\1/p' | sed -n -e 's/.*\(\/.*\/.*\)/\1/p')
+readonly CURRENT_SUBVOLUME
+# Set color codes
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[0;33m'
+readonly NC='\033[0m' # No Color
+
+# Get current date and time
+NOW=$(TZ=${TIMEZONE} date +'%Y-%m-%d %H-%M-%S')
+readonly NOW
+CURRENT_DATE=$(echo "${NOW}" | cut -d' ' -f1)
+readonly CURRENT_DATE
+CURRENT_TIME=$(echo "${NOW}" | cut -d' ' -f2)
+readonly CURRENT_TIME
+
+# Utility functions
+log_success() { printf "${GREEN}%s${NC}\n" "$*"; }
+log_warning() { printf "${YELLOW}%s${NC}\n" "$*"; }
+log_error() { printf "${RED}%s${NC}\n" "$*"; }
+require_confirm() {
+    printf "${YELLOW}%s${NC} [y/N] " "${1}"
+    read -r confirm
+    if [[ "${confirm}" != "y" ]]; then
+        return 1
+    fi
+}
+
+check_command() {
+    if ! command -v "${1}" &>/dev/null; then
+        log_error "=> ${1} is not installed."
+        exit 1
+    fi
+}
+
+check_dependencies() {
+    # Check dependencies
+    check_command "btrfs"
+    check_command "df"
+    check_command "wc"
+    check_command "awk"
+    check_command "sed"
+    check_command "cut"
+    check_command "find"
+    check_command "grep"
+    check_command "sort"
+    check_command "head"
+    check_command "tail"
+    check_command "date"
+    check_command "dirname"
+    check_command "basename"
+    check_command "mountpoint"
+}
+
+init() {
+    check_dependencies
+
+    # Mount @.snapshots subvolume
+    sudo mount -o "noatime,compress=zstd,space_cache=v2,commit=120,subvol=${SUBVOLUME_NAME}" "${MOUNT_DEVICE}" "${MOUNT_POINT}"
+}
+
+quit() {
+    # Clean empty directories in SNAPSHOT_DIR
+    sudo find "$SNAPSHOT_DIR" -maxdepth 1 -mindepth 1 ! -name ".*" -type d -empty -exec echo "Clean: {}" \; -delete
+    # Unmount @.snapshots subvolume
+    while mountpoint -q "${MOUNT_POINT}"; do
+        sudo umount "${MOUNT_POINT}"
+        #sleep 1
+    done
+    exit "$1"
+}
+
+create_snapshot() {
+    local default_path="${SNAPSHOT_DIR}/${CURRENT_DATE}/@${CURRENT_TIME}"
+    local snapshot_path=${2:-${default_path}}
+    local dir
+    dir=$(dirname "${snapshot_path}")
+    if [[ ! -d "${dir}" ]]; then
+        sudo mkdir -p "${dir}"
+    fi
+    sudo btrfs subvolume snapshot "${1}" "${snapshot_path}"
+    log_success "=> Created snapshot: ${snapshot_path}"
+}
+
+list_snapshots() {
+    # List all snapshots
+    find "${SNAPSHOT_DIR}" -maxdepth 2 -mindepth 2 ! -name ".*"
+}
+
+clean_snapshots() {
+    case "${1:-}" in
+
+    "all")
+        ### Clean all snapshots except the current subvolume
+        if ! require_confirm "=> Clean all snapshots except current subvolume. Are you sure?"; then
+            return
+        fi
+        find "${SNAPSHOT_DIR}" -maxdepth 2 -mindepth 2 ! -name ".*" ! -path "${CURRENT_SUBVOLUME}" -exec sudo btrfs subvolume delete {} \;
+        ;;
+
+    "yesterday")
+        ### Clean snapshots from the previous day
+        local previous_date
+        previous_date=$(TZ=${TIMEZONE} date -d "yesterday" +'%Y-%m-%d')
+        # Check if the previous day's directory exists
+        if [[ -d "${SNAPSHOT_DIR}/${previous_date}" ]]; then
+            # If the number of snapshots is less than or equal to 1, do not clean
+            local dir_count
+            dir_count=$(find "${SNAPSHOT_DIR}/${previous_date}" -maxdepth 1 -mindepth 1 ! -name ".*" ! -path "${CURRENT_SUBVOLUME}" | wc -l)
+            if ((dir_count <= 1)); then
+                return
+            fi
+
+            # Keep the earliest snapshot and delete all others
+            earliest_snapshot=$(find "${SNAPSHOT_DIR}/${previous_date}" -maxdepth 1 -mindepth 1 ! -name ".*" ! -path "${CURRENT_SUBVOLUME}" | sort | head -n 1)
+            for snapshot in "${SNAPSHOT_DIR}/${previous_date}"/@*; do
+                if [[ "${snapshot}" != "${earliest_snapshot}" ]]; then
+                    sudo btrfs subvolume delete "${snapshot}"
+                fi
+            done
+        fi
+        ;;
+
+    *)
+        ### Clean all snapshots older than one week
+        local one_week_ago
+        one_week_ago=$(TZ=${TIMEZONE} date -d "1 week ago" +'%Y-%m-%d')
+        for dir in "${SNAPSHOT_DIR}"/*; do
+            if [[ -d "${dir}" ]]; then
+                dir_date=$(basename "${dir}")
+                if [[ "${dir_date}" < "${one_week_ago}" ]]; then
+                    find "${dir}" -maxdepth 1 -mindepth 1 ! -name ".*" ! -path "${CURRENT_SUBVOLUME}" -exec sudo btrfs subvolume delete {} \;
+                fi
+            fi
+        done
+        ;;
+
+    esac
+}
+
+check_snapshot_exists() {
+    # Check if the specified snapshot exists
+    if [[ ! -d "${SNAPSHOT_DIR}/${1}" ]]; then
+        log_error "=> Snapshot ${SNAPSHOT_DIR}/$1 does not exist."
+        return 1
+    fi
+    return 0
+}
+
+mount_snapshot() {
+    # If no parameter is provided, exit and keep @.snapshots subvolume mounted
+    if [[ -z "${1}" ]]; then
+        exit 0
+    fi
+
+    # Mount the specified snapshot
+    if ! check_snapshot_exists "${1}"; then
+        return 1
+    fi
+
+    # Update systemd-boot configuration
+    local boot_file_backup
+    boot_file_backup="${BOOT_FILE}.$(TZ=${TIMEZONE} date +'%Y%m%d%H%M%S').bak"
+    sudo cp -f "${BOOT_FILE}" "${boot_file_backup}"
+    sudo awk -i inplace -v snap="subvol=${SUBVOLUME_NAME}/${SNAPSHOT_DIR##*/}/$1" '{gsub(/subvol=[^ ]*/, snap); print}' ${BOOT_FILE}
+    sudo cat "${BOOT_FILE}"
+    log_success "=> Systemd-boot config updated. Check the above config before reboot."
+}
+
+restore_snapshot() {
+    if [[ -z "${1}" ]]; then
+        log_error "=> Please specify a snapshot to restore."
+        return 1
+    fi
+
+    # Restore to the specified snapshot
+    if ! check_snapshot_exists "${1}"; then
+        return 1
+    fi
+
+    # Backup current subvolume
+    log_success "=> Backup current subvolume..."
+    create_snapshot /
+
+    # Backup the snapshot to be restored
+    local snapshot_path="${SNAPSHOT_DIR}/${1}"
+    local backup_path="${SNAPSHOT_DIR}/${1}.bak"
+    if [[ ! -f "${backup_path}" ]]; then
+        log_success "=> Backup snapshot ${1}..."
+        create_snapshot "${snapshot_path}" "${backup_path}"
+    else
+        log_warning "=> Snapshot ${1}.bak already exists, skip backup."
+    fi
+
+    # Restore snapshot
+    log_success "=> Mount snapshot ${1}..."
+    mount_snapshot "${1}"
+}
+
+auto_snap() {
+    # If there is no snapshot for today, create one
+    if [[ ! -d "${SNAPSHOT_DIR}/${CURRENT_DATE}" ]]; then
+        create_snapshot /
+        return
+    fi
+
+    # Check the latest snapshot time for today
+    local latest_snapshot
+    latest_snapshot=$(find "${SNAPSHOT_DIR}/${CURRENT_DATE}" -maxdepth 1 -mindepth 1 ! -name ".*" | sort | tail -n 1)
+
+    if [[ -n "${latest_snapshot}" ]]; then
+        # Calculate time difference
+        latest_time=$(basename "${latest_snapshot}" | cut -d'@' -f2)
+        latest_time=$(TZ=${TIMEZONE} date -d "${latest_time//-/:}" +'%s')
+        current_time=$(TZ=${TIMEZONE} date -d "${CURRENT_TIME//-/:}" +'%s')
+        time_diff=$((current_time - latest_time))
+
+        # If the latest snapshot was created within the last hour, skip
+        if [[ ${time_diff} -lt 3600 ]]; then
+            log_success "=> Last snapshot was taken less than 1 hour ago, skipping."
+            return
+        fi
+    fi
+
+    create_snapshot /
+}
+
+main() {
+    init
+
+    case "${1:-}" in
+    "list")
+        list_snapshots "${2:-}"
+        ;;
+    "clean")
+        clean_snapshots "${2:-}"
+        ;;
+    "mount")
+        mount_snapshot "${2:-}"
+        ;;
+    "restore")
+        restore_snapshot "${2:-}"
+        ;;
+    "now")
+        create_snapshot /
+        ;;
+    *)
+        auto_snap
+        ;;
+    esac
+
+    quit $?
+}
+
+main "$@"

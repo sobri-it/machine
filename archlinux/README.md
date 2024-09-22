@@ -1,4 +1,8 @@
-# Tutorial: Install Arch Linux an Asus Zephyrus G14 (G401II)
+# Tutorial: Install Arch Linux
+
+| Laptop Model                | Basic installation tested successfully     |
+|-----------------------------|--------------------------------------------|
+| Asus G14 Zephyrus (G401II)  | ✅                                         |
 
 ## Introduction
 
@@ -63,7 +67,7 @@ station list
 
 Update system clock:
 ```sh
-timedatectl set-ntp true`
+timedatectl set-ntp true
 ```
 Check if date is ok:
 ```sh
@@ -98,13 +102,13 @@ cryptsetup -v luksFormat /dev/nvme0n1p2
 
 User can add *Yubikey* with following command (see [here](https://www.guyrutenberg.com/2022/02/17/unlock-luks-volume-with-a-yubikey/) for more info):
 ```
-systemd-cryptenroll /dev/nvme0n1p2 --fido2-device=auto --fido2-with-client-pin=yes
+systemd-cryptenroll /dev/nvme0n1p2 --fido2-device=auto --fido2-with-client-pin=no
 ```
 
 Open encrypted disk (with then newly Yubikey added):
 ```sh
 cryptsetup open /dev/nvme0n1p2 luks --token-only
-```
+``` 
 If no Yubikey is used:
 ```sh
 cryptsetup open /dev/nvme0n1p2 luks
@@ -178,7 +182,7 @@ swapon /mnt/swap/swapfile
 Use `pacstrap` to install Arch Linux system (desired packages packages can be added)
 
 ```sh
-pacstrap /mnt base base-devel linux linux-firmware btrfs-progs vim networkmanager amd-ucode
+pacstrap /mnt base base-devel linux linux-firmware btrfs-progs vim git networkmanager amd-ucode libfido2
 ```
 
 Generate fstab file:
@@ -192,7 +196,7 @@ Check if fstab contain all volumes (including `swapfile`):
 cat /mnt/etc/fstab
 ```
 
-# Chroot setup settings
+### Chroot setup settings
 
 Update time locals
 ```sh
@@ -223,6 +227,7 @@ Execute `locale-gen` to create the locales now
 Edit `/etc/mkinitcpio.conf` and add encrypt btrfs to hooks between block/filesystems.
 ```
 HOOKS(base udev autodetect modconf block encrypt btrfs filesystems keyboard fsck)
+HOOKS(base systemd autodetect microcode modconf kms keyboard keymap sd-vconsole block sd-encrypt filesystems fsck)
 ```
 Also include amdgpu in the MODULES section: 
 ```
@@ -324,6 +329,79 @@ Install useful daemons.
 sudo pacman -Sy acpid dbus
 sudo systemctl enable acpid
 ```
+## Setup Desktop Environment
 
-Setup automatic Snapshots for Pacman
-The goal is to have automatic snapshots each time changes are made with pacman. 
+Get X.Org and KDE Plasma
+
+Install xorg and kde packages. I prefer wayland over X, however, it is a good idea to have X installed as well (select `noto-fonts` and `pipewire-jack`).
+
+```sh
+sudo pacman -S xorg plasma plasma-workspace sddm 
+```
+
+Enable SDDM login manager
+```sh
+sudo systemctl enable sddm
+```
+
+Reboot and login to your new Desktop.
+
+## brtfs Snapshots
+
+Setup automatic Snapshots for Pacman.
+The goal is to have automatic snapshots each time changes are made with pacman.
+
+Copy `usr/bin/autosnap` script into `/usr/bin/autosnap`, make sure this file is executable.
+
+Add `pacman` hook `00-autosnap.hook`.
+
+## Customizations
+
+Use these customizations to get the most out of your system.
+### Install asusctl tool
+
+Install asus tools using `yay` command.
+First, install yay:
+```sh
+sudo pacman -S --needed git base-devel
+git clone https://aur.archlinux.org/yay.git
+cd yay
+makepkg -si
+```
+
+Then install asusctl tools (make sure to use `wayland` window manager and not `xorg`):
+
+```sh
+yay -S asusctl
+yay -S supergfxctl
+yay -s rog-control-center
+```
+
+Enable these tools by running
+
+```sh
+sudo systemctl enable --now power-profiles-daemon.service
+systemctl enable --now supergfxd
+```
+
+Run the following commands to set charge limit and enable Quiet, Performance and Balanced Profiles:
+
+```sh
+# asusctl -c 85 		# Sets charge limit to 85% if you do not want this, do not execute this line
+asusctl fan-curve -m Quiet -f cpu -e true
+asusctl fan-curve -m Quiet -f gpu -e true 
+```
+
+For fine-tuning read the [Arch Linux Wiki](https://wiki.archlinux.org/title/ASUS_GA401I#ASUSCtl) or the [Repository from Luke](https://gitlab.com/asus-linux/asusctl). 
+
+
+### NVIDIA Drivers
+
+```sh
+sudo pacman -S nvidia-dkms acpi_call
+```
+
+modprobe nvidia_drm modset=1
+
+
+MODULES(usbhid xhci_hcd)

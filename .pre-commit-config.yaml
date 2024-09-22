@@ -17,3 +17,7 @@ repos:
     - push
   repo: https://github.com/commitizen-tools/commitizen
   rev: v3.22.0
+- hooks:
+    - id: shellcheck
+  rev: v0.10.0
+  repo: https://github.com/koalaman/shellcheck-precommit
