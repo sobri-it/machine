@@ -130,7 +130,7 @@ mkfs.vfat -F32 -n EFI /dev/nvme0n1p1
 LUKS (Linux Unified Key Setup) is a disk encryption specification created for Linux. It provides a standard on-disk format, which facilitates compatibility among different programs. LUKS uses dm-crypt as the disk encryption backend.
 Check [here](https://wiki.archlinux.org/title/Dm-crypt/Encrypting_an_entire_system#LUKS_on_a_partition) for more information.
 
-To create an encrypted filesystem, use the following commands:
+To create an encrypted filesystem, use the following commands (enter a password, that will later be removed):
 ```sh
 cryptsetup -v luksFormat /dev/nvme0n1p2
 ```
@@ -147,6 +147,13 @@ cryptsetup open /dev/nvme0n1p2 luks --token-only
 If no Yubikey is used:
 ```sh
 cryptsetup open /dev/nvme0n1p2 luks
+```
+
+⚠️ Skip this step if no FIDO2 key is used
+
+Wipe password slot to ensure only fido2 key can decrypt disk:
+```sh
+systemd-cryptenroll --wipe-slot password
 ```
 
 To leverage FIDO2 `libfido2` library needs to be installed (done in the later steps).
