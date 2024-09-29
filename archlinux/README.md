@@ -98,6 +98,12 @@ Update system clock:
 ```sh
 timedatectl set-ntp true
 ```
+
+Set timezone (use `list-timezones` to get all timezones):
+```sh
+timedatectl set-timezone Europe/Paris
+```
+
 Check if date is ok:
 ```sh
 date
