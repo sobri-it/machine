@@ -345,7 +345,7 @@ initrd	/initramfs-linux.img
 Finally, copy boot-options with:
 
 ```sh
-echo "options	cryptdevice=UUID=$(blkid -s UUID -o value /dev/nvme0n1p2):luks root=/dev/mapper/luks rootflags=subvol=@ quiet loglevel=3 systemd.show_status=auto rd.udev.log_level=3 rw" >> /boot/loader/entries/arch.conf
+UUID=$(blkid -s UUID -o value /dev/nvme0n1p2) echo "options	cryptdevice=UUID=$UUID:luks rd.luks.name=$UUID=luks rd.luks.options=$UUID=fido2-device=auto root=/dev/mapper/luks rootflags=subvol=@ quiet loglevel=3 systemd.show_status=auto rd.udev.log_level=3 rw" >> /boot/loader/entries/arch.conf
 ```
 
 ### Leave Chroot and Reboot
@@ -483,7 +483,7 @@ title Arch Linux Stable
 linux /vmlinuz-linux-stable
 initrd /amd-ucode-stable.img
 initrd /initramfs-linux-stable.img
-options cryptdevice=UUID=xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:luks root=/dev/mapper/luks rootflags=subvol=@snapshots/STABLE quiet splash loglevel=3 systemd.show_status=auto rd.udev.log_level=3 rw
+options cryptdevice=UUID=$UUID:luks rd.luks.name=$UUID=luks rd.luks.options=$UUID=fido2-device=auto root=/dev/mapper/luks rootflags=subvol=@snapshots/STABLE quiet splash loglevel=3 systemd.show_status=auto rd.udev.log_level=3 rw
 ```
 
 ### 🚧 Automatic Snapshot 🚧
