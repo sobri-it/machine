@@ -342,10 +342,15 @@ initrd	/amd-ucode.img
 initrd	/initramfs-linux.img
 ```
 
-Finally, copy boot-options with:
+Copy boot-options with:
 
 ```sh
 UUID=$(blkid -s UUID -o value /dev/nvme0n1p2) echo "options	cryptdevice=UUID=$UUID:luks rd.luks.name=$UUID=luks rd.luks.options=$UUID=fido2-device=auto root=/dev/mapper/luks rootflags=subvol=@ quiet loglevel=3 systemd.show_status=auto rd.udev.log_level=3 rw" >> /boot/loader/entries/arch.conf
+```
+
+Add a password to `root` user:
+```sh
+passwd root
 ```
 
 ### Leave Chroot and Reboot
