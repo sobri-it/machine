@@ -295,7 +295,7 @@ Execute `locale-gen` to create the locales now
 
 Edit `/etc/mkinitcpio.conf` add following hooks:
 ```
-HOOKS(base systemd autodetect microcode modconf kms keyboard keymap sd-vconsole block sd-encrypt filesystems fsck)
+HOOKS(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)
 ```
 
 Also include amdgpu in the MODULES section:
