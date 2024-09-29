@@ -293,6 +293,11 @@ en_US.UTF-8
 ```
 Execute `locale-gen` to create the locales now
 
+Create `/etc/vconsole.conf` file:
+```sh
+echo "KEYMAP=us" > /etc/vconsole.conf
+```
+
 Edit `/etc/mkinitcpio.conf` add following hooks:
 ```
 HOOKS(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)
