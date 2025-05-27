@@ -1,0 +1,1 @@
+windows/setup/MagicDebian.wsl filter=lfs diff=lfs merge=lfs -text
